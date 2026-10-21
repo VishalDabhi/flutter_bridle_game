@@ -13,7 +13,10 @@ Letters already scored as misses grey out on the on-screen keyboard.
 flutter run
 ```
 
-Type on the on-screen keyboard or on a physical one, then press enter.
+Type on the on-screen keyboard or on a physical one, then press enter. Each
+round has a hint: a lightbulb in the app bar describes the hidden word, and
+returns after a minute. Later hints in the same round reveal a letter each, on
+the row being filled.
 
 ## How it is put together
 
@@ -21,11 +24,17 @@ Type on the on-screen keyboard or on a physical one, then press enter.
 | --- | --- |
 | `lib/game.dart` | The rules: `Game`, `Word`, `Letter`, `HitType`. Pure Dart, no Flutter imports. |
 | `lib/word_list.dart` | The vocabulary: `WordList`, `AssetWordList`, `InMemoryWordList`. |
-| `lib/game_controller.dart` | UI-facing controller holding the round and the letters being typed. |
-| `lib/theme.dart` | Wordle's light palette and the app theme. |
-| `lib/pages/game_page.dart` | Board, keyboard, reveal cascade, and rejections. |
-| `lib/widgets/` | Board, tile flip, keyboard, hidden input, result panel. |
-| `assets/words/` | The bundled word lists: 2,315 answers and 14,855 legal guesses. |
+| `lib/hints.dart` | Hint clues: `HintBook`, `SafeHint`, `unrevealedPositions`. |
+| `lib/game_controller.dart` | UI-facing controller holding the round, the letters being typed, and the free hint. |
+| `lib/theme.dart` | The Wordle palette and the app theme. |
+| `lib/pages/game_page.dart` | Board, keyboard, hint button, reveal cascade, and rejections. |
+| `lib/widgets/` | Board, tile flip, keyboard, hidden input, hint button, result panel. |
+| `assets/words/` | The bundled word lists: 2,315 answers, 14,855 legal guesses, and 2,057 hints. |
+| `tool/extract_hints.dart` | One-off generator that builds `hints.json` from WordNet 3.0. |
+
+Clues come from [WordNet 3.0](https://wordnet.princeton.edu/) under its own
+licence, bundled as `assets/words/wordnet-LICENSE.txt`. See
+`assets/words/hints.SOURCE.md` for coverage and how to regenerate them.
 
 `main()` loads the word lists from `assets/words/` before the first frame, so
 the game never guesses from a hard-coded list and the UI never waits on I/O.
@@ -45,9 +54,11 @@ flutter test
 - `test/game_test.dart` covers scoring, including repeated letters, plus a guard
   that keeps `lib/game.dart` free of Flutter imports.
 - `test/word_list_test.dart` validates the shipped word files and the loader.
+- `test/hints_test.dart` covers clue lookup, the leak guard, the one-free-hint
+  rule, and validates the shipped `hints.json`.
 - `test/widget_test.dart` plays real rounds: typing on both keyboards,
-  rejections, the flip cascade, key colours, and the end-of-round panel. Pass
-  `step: Duration.zero` to `MainApp` to settle animations instantly.
+  rejections, the flip cascade, key colours, the hint flow, and the end-of-round
+  panel. Pass `step: Duration.zero` to `MainApp` to settle animations instantly.
 
 ## Not built yet
 

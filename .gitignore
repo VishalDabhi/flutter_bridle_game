@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# WordNet database, unpacked by the one-off hint extractor.
+/tool/wordnet/
+
 # Symbolication related
 app.*.symbols
 

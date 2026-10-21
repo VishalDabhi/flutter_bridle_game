@@ -1,4 +1,5 @@
 import 'package:bk_lottery/game.dart';
+import 'package:bk_lottery/hints.dart';
 import 'package:bk_lottery/main.dart';
 import 'package:bk_lottery/widgets/keyboard.dart';
 import 'package:bk_lottery/word_list.dart';
@@ -27,6 +28,8 @@ void main() {
     WidgetTester tester, {
     String word = hidden,
     List<String>? allowed,
+    Map<String, String>? hints,
+    Duration hintCooldown = Duration.zero,
   }) async {
     await tester.pumpWidget(
       MainApp(
@@ -34,7 +37,9 @@ void main() {
           answers: [word],
           allowed: allowed ?? const [hidden, ...wrongGuesses],
         ),
+        hints: hints == null ? null : InMemoryHintBook(hints),
         step: Duration.zero,
+        hintCooldown: hintCooldown,
       ),
     );
     await tester.pumpAndSettle();
@@ -573,6 +578,194 @@ void main() {
       expect(tile.type, HitType.none);
       expect(tile.revealed, isFalse);
       expect(find.byType(PlayAgainButton), findsNothing);
+    });
+  });
+
+  group('the hint button', () {
+    testWidgets('shows the meaning of the hidden word', (tester) async {
+      await pumpGame(tester, hints: const {'abbey': 'a monastery'});
+
+      await tester.tap(find.byType(HintButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('The word means: a monastery'), findsOneWidget);
+    });
+
+    testWidgets('the clue never contains the hidden word', (tester) async {
+      await pumpGame(
+        tester,
+        word: 'aback',
+        hints: const {'aback': 'the ship came up into the wind all aback'},
+      );
+
+      await tester.tap(find.byType(HintButton));
+      await tester.pumpAndSettle();
+
+      // The leaking clue is refused, so a letter is revealed instead.
+      expect(find.textContaining('aback'), findsNothing);
+      expect(find.textContaining('position 1'), findsOneWidget);
+      expect(find.textContaining('"A"'), findsOneWidget);
+    });
+
+    testWidgets('reveals a letter when the word has no clue', (tester) async {
+      await pumpGame(tester, word: 'abled');
+
+      await tester.tap(find.byType(HintButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('The letter at position 1 is "A"'), findsOneWidget);
+    });
+
+    testWidgets('the revealed letter stays on the board', (tester) async {
+      await pumpGame(tester, word: 'abled');
+
+      await tester.tap(find.byType(HintButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<Tile>(find.byKey(const ValueKey('tile-0-0'))).letter,
+          'a');
+      expect(tester.widget<Tile>(find.byKey(const ValueKey('tile-0-1'))).letter,
+          isEmpty);
+    });
+
+    testWidgets('counts down the minute before the hint returns',
+        (tester) async {
+      await pumpGame(
+        tester,
+        hints: const {'abbey': 'a monastery'},
+        hintCooldown: const Duration(seconds: 60),
+      );
+
+      // The countdown ticks on a live timer, so these tests pump single
+      // frames: settling would run the clock out before asserting.
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('OK'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('1:00'), findsOneWidget);
+
+      // Tapping again does nothing while it counts down.
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(AlertDialog), findsNothing);
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(find.text('0:55'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 50));
+      expect(find.text('0:05'), findsOneWidget);
+
+      // The countdown clears itself once it runs out.
+      await tester.pump(const Duration(seconds: 6));
+      expect(find.text('0:05'), findsNothing);
+      expect(find.textContaining(':'), findsNothing);
+    });
+
+    testWidgets('a second hint reveals a second letter', (tester) async {
+      await pumpGame(tester, word: 'abled');
+
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+      expect(find.text('The letter at position 1 is "A"'), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+      expect(find.text('The letter at position 2 is "B"'), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<Tile>(find.byKey(const ValueKey('tile-0-0'))).letter,
+        'a',
+      );
+      expect(
+        tester.widget<Tile>(find.byKey(const ValueKey('tile-0-1'))).letter,
+        'b',
+      );
+    });
+
+    testWidgets('the button goes dry once every letter is revealed',
+        (tester) async {
+      await pumpGame(tester, word: 'abled');
+
+      for (var i = 0; i < 5; i++) {
+        await tester.tap(find.byIcon(Icons.lightbulb_outline));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('every letter is already on the board'),
+          findsOneWidget);
+    });
+
+    testWidgets('Play Again re-arms the hint immediately', (tester) async {
+      await pumpGame(
+        tester,
+        hints: const {'abbey': 'a monastery'},
+        hintCooldown: const Duration(seconds: 60),
+      );
+
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('OK'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('1:00'), findsOneWidget);
+
+      await loseRound(tester);
+      await tester.tap(find.byType(PlayAgainButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1:00'), findsNothing);
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(AlertDialog), findsOneWidget);
+    });
+
+    testWidgets('is unavailable once the round is over', (tester) async {
+      await pumpGame(tester, hints: const {'abbey': 'a monastery'});
+
+      await loseRound(tester);
+
+      expect(find.byTooltip('No hint available'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('plays a round against the bundled clues', (tester) async {
+      final hints = (await tester.runAsync(AssetHintBook.load))!;
+      final wordList = (await tester.runAsync(AssetWordList.load))!;
+      final answer = Game(wordList: wordList, seed: 0).hiddenWord.toString();
+
+      await tester.pumpWidget(
+        MainApp(wordList: wordList, hints: hints, seed: 0, step: Duration.zero),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(HintButton));
+      await tester.pumpAndSettle();
+
+      final clue = hints.descriptionOf(answer);
+      if (clue == null) {
+        expect(find.textContaining('position 1'), findsOneWidget);
+      } else {
+        expect(find.text('The word means: $clue'), findsOneWidget);
+      }
     });
   });
 

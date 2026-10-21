@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:bk_lottery/game.dart';
 import 'package:bk_lottery/game_controller.dart';
+import 'package:bk_lottery/hints.dart';
 import 'package:bk_lottery/word_list.dart';
 import 'package:bk_lottery/widgets/board.dart';
 import 'package:bk_lottery/widgets/guess_input.dart';
+import 'package:bk_lottery/widgets/hint_button.dart';
 import 'package:bk_lottery/widgets/keyboard.dart';
 import 'package:bk_lottery/widgets/result_panel.dart';
 import 'package:flutter/material.dart';
@@ -13,12 +15,15 @@ import 'package:flutter/material.dart';
 class GamePage extends StatefulWidget {
   /// Creates a page that plays a round drawn from [wordList].
   ///
-  /// [seed] makes the hidden word reproducible, and [step] controls how long
+  /// [seed] makes the hidden word reproducible, [step] controls how long
   /// the tile flip cascade takes; tests pass a zero [step] to skip it.
+  /// [hints] supplies clues for the hint button.
   const GamePage({
     required this.wordList,
     this.seed,
     this.step = const Duration(milliseconds: 120),
+    this.hintCooldown = GameController.defaultHintCooldown,
+    this.hints,
     super.key,
   });
 
@@ -30,6 +35,12 @@ class GamePage extends StatefulWidget {
 
   /// The delay between two consecutive tile flips.
   final Duration step;
+
+  /// How long a spent hint takes to come back.
+  final Duration hintCooldown;
+
+  /// Clues for the hint button, or `null` for none.
+  final HintBook? hints;
 
   @override
   State<GamePage> createState() => _GamePageState();
@@ -49,6 +60,8 @@ class _GamePageState extends State<GamePage> {
     super.initState();
     _controller = GameController(
       game: Game(wordList: widget.wordList, seed: widget.seed),
+      hintBook: widget.hints ?? InMemoryHintBook.empty(),
+      hintCooldown: widget.hintCooldown,
     );
   }
 
@@ -146,6 +159,19 @@ class _GamePageState extends State<GamePage> {
 
   void _clearToast() => ScaffoldMessenger.of(context).clearSnackBars();
 
+  /// Spends a hint and explains what came back.
+  void _onHint() {
+    final status = _controller.useHint();
+    showHintDialog(
+      context,
+      status: status,
+      hiddenWord: _controller.game.hiddenWord.toString(),
+      description: _controller.hintText,
+      letterIndex: _controller.lastHintColumn,
+      cooldownRemaining: _controller.hintCooldownRemaining,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -153,46 +179,61 @@ class _GamePageState extends State<GamePage> {
       builder: (context, _) {
         final game = _controller.game;
 
-        return Column(
-          children: [
-            Expanded(
-              child: Board(
-                game: game,
-                draft: _controller.input,
-                activeIndex: game.isOver ? -1 : game.activeIndex,
-                revealedRow: _revealedRow,
-                revealedTiles: _revealedTiles,
-                step: widget.step,
-                shake: _shake,
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Birdle'),
+            actions: [
+              HintButton(
+                hintReadyAt: _controller.hintReadyAt,
+                enabled: !game.isOver && !_controller.isRevealing,
+                cooldownRemaining: _controller.hintCooldownRemaining,
+                onPressed: _onHint,
               ),
-            ),
-            if (game.isOver)
-              ResultPanel(
-                didWin: game.didWin,
-                attempts: _controller.guessesUsed,
-                hiddenWord: game.hiddenWord.toString(),
-                onPlayAgain: _onPlayAgain,
-              )
-            else
-              Keyboard(
-                keyStates: game.keyStates,
-                canType: _controller.canType,
-                canSubmit: _controller.canSubmit,
-                canBackspace: _controller.canType && _controller.input.isNotEmpty,
-                draftIsLegal:
-                    _controller.input.length == Word.wordLength &&
-                        game.isLegalGuess(_controller.input),
-                onLetter: _controller.type,
-                onBackspace: _controller.backspace,
-                onSubmit: _onSubmit,
+              const SizedBox(width: 4),
+            ],
+          ),
+          body: Column(
+            children: [
+              Expanded(
+                child: Board(
+                  game: game,
+                  draft: _controller.input,
+                  hintLetters: _controller.hintLetters,
+                  activeIndex: game.isOver ? -1 : game.activeIndex,
+                  revealedRow: _revealedRow,
+                  revealedTiles: _revealedTiles,
+                  step: widget.step,
+                  shake: _shake,
+                ),
               ),
-            GuessInput(
-              controller: _controller.text,
-              focusNode: _focusNode,
-              onSubmitted: _onSubmit,
-              enabled: _controller.canType,
-            ),
-          ],
+              if (game.isOver)
+                ResultPanel(
+                  didWin: game.didWin,
+                  attempts: _controller.guessesUsed,
+                  hiddenWord: game.hiddenWord.toString(),
+                  onPlayAgain: _onPlayAgain,
+                )
+              else
+                Keyboard(
+                  keyStates: game.keyStates,
+                  canType: _controller.canType,
+                  canSubmit: _controller.canSubmit,
+                  canBackspace:
+                      _controller.canType && _controller.input.isNotEmpty,
+                  draftIsLegal: _controller.input.length == Word.wordLength &&
+                      game.isLegalGuess(_controller.input),
+                  onLetter: _controller.type,
+                  onBackspace: _controller.backspace,
+                  onSubmit: _onSubmit,
+                ),
+              GuessInput(
+                controller: _controller.text,
+                focusNode: _focusNode,
+                onSubmitted: _onSubmit,
+                enabled: _controller.canType,
+              ),
+            ],
+          ),
         );
       },
     );

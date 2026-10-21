@@ -53,6 +53,7 @@ class Board extends StatelessWidget {
   const Board({
     required this.game,
     required this.draft,
+    required this.hintLetters,
     required this.activeIndex,
     required this.revealedRow,
     required this.revealedTiles,
@@ -66,6 +67,9 @@ class Board extends StatelessWidget {
 
   /// The letters typed so far, shown on the row being filled.
   final String draft;
+
+  /// The letters spent hints have revealed, keyed by board row.
+  final Map<int, Set<int>> hintLetters;
 
   /// Index of the row the player is currently filling, or `-1` when the round
   /// is over.
@@ -120,6 +124,7 @@ class Board extends StatelessWidget {
                       child: _Row(
                         game: game,
                         draft: draft,
+                        hintLetters: hintLetters,
                         index: row,
                         size: size,
                         step: step,
@@ -142,6 +147,7 @@ class _Row extends StatelessWidget {
   const _Row({
     required this.game,
     required this.draft,
+    required this.hintLetters,
     required this.index,
     required this.size,
     required this.step,
@@ -152,6 +158,7 @@ class _Row extends StatelessWidget {
 
   final Game game;
   final String draft;
+  final Map<int, Set<int>> hintLetters;
   final int index;
   final double size;
   final Duration step;
@@ -188,9 +195,12 @@ class _Row extends StatelessWidget {
           for (var column = 0; column < Word.wordLength; column++)
             Tile(
               key: ValueKey('tile-$index-$column'),
-              letter: revealAnswer
-                  ? game.hiddenWord[column].char
-                  : letters[column],
+              letter: switch ((revealAnswer,
+                  hintLetters[index]?.contains(column) ?? false)) {
+                (true, _) => game.hiddenWord[column].char,
+                (_, true) => game.hiddenWord[column].char,
+                (_, _) => letters[column],
+              },
               type: guess.isEmpty ? HitType.none : guess[column].type,
               revealed: index < revealedRow ||
                   (index == revealedRow && column < revealedTiles),
