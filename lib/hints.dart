@@ -1,8 +1,8 @@
 /// One-line clues for the hidden word.
 ///
 /// [HintBook] looks up the meaning of a word, [SafeHint] rejects any clue that
-/// would give the word away, and [unrevealedPositions] finds a letter to
-/// reveal when a word has no usable clue.
+/// would give the word away, and [unrevealedPositions] finds letters a hint
+/// can reveal.
 library;
 
 import 'dart:convert';
@@ -115,14 +115,15 @@ List<int> unrevealedPositions(Game game) => [
 /// The first position a hint can usefully reveal, or `null` once every letter
 /// is known.
 ///
-/// [alreadyRevealed] holds the positions earlier hints have given away, so
-/// repeated hints walk along the word instead of returning the same letter.
+/// [excluded] holds positions earlier hints have given away or the player has
+/// already typed, so repeated hints walk along the word instead of returning
+/// the same letter or hiding something the player entered.
 int? firstUnrevealedPosition(
   Game game, [
-  Set<int> alreadyRevealed = const {},
+  Set<int> excluded = const {},
 ]) {
   for (final position in unrevealedPositions(game)) {
-    if (!alreadyRevealed.contains(position)) return position;
+    if (!excluded.contains(position)) return position;
   }
   return null;
 }

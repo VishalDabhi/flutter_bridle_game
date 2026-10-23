@@ -75,11 +75,28 @@ class _HintButtonState extends State<HintButton> {
       return;
     }
 
-    _ticker ??= Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _remaining -= const Duration(seconds: 1));
-      if (_remaining <= Duration.zero) _ticker?.cancel();
-    });
+    final ticker = _ticker;
+    if (ticker == null || !ticker.isActive) {
+      _ticker = Timer.periodic(const Duration(seconds: 1), _tick);
+    }
+  }
+
+  /// Advances the countdown and retires the ticker at zero.
+  ///
+  /// Clearing [_ticker] is what lets the next cooldown start its own timer;
+  /// a cancelled timer left in the field would look active to [_sync].
+  void _tick(Timer timer) {
+    if (!mounted) {
+      timer.cancel();
+      _ticker = null;
+      return;
+    }
+
+    setState(() => _remaining -= const Duration(seconds: 1));
+    if (_remaining <= Duration.zero) {
+      timer.cancel();
+      _ticker = null;
+    }
   }
 
   @override
@@ -100,7 +117,7 @@ class _HintButtonState extends State<HintButton> {
                   : 'Hint',
           onPressed: ready ? widget.onPressed : null,
         ),
-        if (waiting)
+        if (waiting && widget.enabled)
           Text(
             _clock(_remaining),
             style: const TextStyle(
@@ -115,8 +132,8 @@ class _HintButtonState extends State<HintButton> {
   }
 
   /// Formats [duration] as `m:ss`, rounding up so a fresh minute reads `1:00`
-/// rather than `0:59` because a few milliseconds have already passed.
-static String _clock(Duration duration) {
+  /// rather than `0:59` because a few milliseconds have already passed.
+  static String _clock(Duration duration) {
     final milliseconds = duration.inMilliseconds;
     final total = milliseconds <= 0 ? 0 : (milliseconds / 1000).ceil();
     final minutes = total ~/ 60;
@@ -128,7 +145,7 @@ static String _clock(Duration duration) {
 /// Shows what spending the hint produced.
 ///
 /// [description] is the clue when the hidden word has one; [letterIndex] is
-/// the position of the letter revealed instead when it does not.
+/// the position of the letter this hint revealed, if it revealed one.
 Future<void> showHintDialog(
   BuildContext context, {
   required HintStatus status,
@@ -171,7 +188,9 @@ String _body(
             '"${hiddenWord[letterIndex].toUpperCase()}"',
       HintStatus.coolingDown =>
         'Your next hint is ready in ${cooldownRemaining.inSeconds} seconds.',
-      HintStatus.limitReached => 'This round is over, so there is no hint.',
-      HintStatus.unavailable =>
-        'This word has no clue, and every letter is already on the board.',
+      HintStatus.limitReached =>
+        'You have used every hint this round allows.',
+      HintStatus.roundOver => 'This round is over, so there is no hint.',
+      HintStatus.busy => 'Wait for the current guess to finish revealing.',
+      HintStatus.unavailable => 'There is nothing left to reveal this round.',
     };

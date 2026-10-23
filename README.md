@@ -14,9 +14,11 @@ flutter run
 ```
 
 Type on the on-screen keyboard or on a physical one, then press enter. Each
-round has a hint: a lightbulb in the app bar describes the hidden word, and
-returns after a minute. Later hints in the same round reveal a letter each, on
-the row being filled.
+round has a hint: a lightbulb in the app bar shows the hidden word's clue,
+then reveals a random letter after a minute, shows the clue again, and reveals
+a second random letter. After that it keeps showing the clue. If the word has
+no clue, the first two hints reveal random letters and then the button is used
+up.
 
 ## How it is put together
 
@@ -25,7 +27,7 @@ the row being filled.
 | `lib/game.dart` | The rules: `Game`, `Word`, `Letter`, `HitType`. Pure Dart, no Flutter imports. |
 | `lib/word_list.dart` | The vocabulary: `WordList`, `AssetWordList`, `InMemoryWordList`. |
 | `lib/hints.dart` | Hint clues: `HintBook`, `SafeHint`, `unrevealedPositions`. |
-| `lib/game_controller.dart` | UI-facing controller holding the round, the letters being typed, and the free hint. |
+| `lib/game_controller.dart` | UI-facing controller holding the round, the letters being typed, and the hint state. |
 | `lib/theme.dart` | The Wordle palette and the app theme. |
 | `lib/pages/game_page.dart` | Board, keyboard, hint button, reveal cascade, and rejections. |
 | `lib/widgets/` | Board, tile flip, keyboard, hidden input, hint button, result panel. |
@@ -54,8 +56,8 @@ flutter test
 - `test/game_test.dart` covers scoring, including repeated letters, plus a guard
   that keeps `lib/game.dart` free of Flutter imports.
 - `test/word_list_test.dart` validates the shipped word files and the loader.
-- `test/hints_test.dart` covers clue lookup, the leak guard, the one-free-hint
-  rule, and validates the shipped `hints.json`.
+- `test/hints_test.dart` covers clue lookup, the leak guard, the alternating
+  clue/letter hints, and validates the shipped `hints.json`.
 - `test/widget_test.dart` plays real rounds: typing on both keyboards,
   rejections, the flip cascade, key colours, the hint flow, and the end-of-round
   panel. Pass `step: Duration.zero` to `MainApp` to settle animations instantly.

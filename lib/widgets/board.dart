@@ -182,6 +182,13 @@ class _Row extends StatelessWidget {
         : guess.map((letter) => letter.char).toList();
     // Once the round is over the answer is spelled out in the empty rows.
     final revealAnswer = game.isOver && guess.isEmpty;
+    // A hint belongs to the row being filled and only occupies slots the
+    // player has not typed into yet, so it never hides a guessed or typed
+    // letter. Submitted rows always show exactly what was submitted.
+    bool showsHint(int column) =>
+        guess.isEmpty &&
+        column >= draft.length &&
+        (hintLetters[index]?.contains(column) ?? false);
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: isActive ? 0.92 : 1, end: isActive ? 1 : 0.92),
@@ -195,8 +202,7 @@ class _Row extends StatelessWidget {
           for (var column = 0; column < Word.wordLength; column++)
             Tile(
               key: ValueKey('tile-$index-$column'),
-              letter: switch ((revealAnswer,
-                  hintLetters[index]?.contains(column) ?? false)) {
+              letter: switch ((revealAnswer, showsHint(column))) {
                 (true, _) => game.hiddenWord[column].char,
                 (_, true) => game.hiddenWord[column].char,
                 (_, _) => letters[column],

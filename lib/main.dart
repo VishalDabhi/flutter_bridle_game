@@ -26,6 +26,7 @@ class MainApp extends StatelessWidget {
     this.seed,
     this.step = const Duration(milliseconds: 120),
     this.hintCooldown = GameController.defaultHintCooldown,
+    this.hintLimit,
     super.key,
   });
 
@@ -46,6 +47,9 @@ class MainApp extends StatelessWidget {
   /// How long a spent hint takes to come back.
   final Duration hintCooldown;
 
+  /// The most hints one round allows, or `null` for no limit.
+  final int? hintLimit;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -58,6 +62,7 @@ class MainApp extends StatelessWidget {
         seed: seed,
         step: step,
         hintCooldown: hintCooldown,
+        hintLimit: hintLimit,
       ),
     );
   }

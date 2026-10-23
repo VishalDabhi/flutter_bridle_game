@@ -30,6 +30,7 @@ void main() {
     List<String>? allowed,
     Map<String, String>? hints,
     Duration hintCooldown = Duration.zero,
+    int? hintLimit,
   }) async {
     await tester.pumpWidget(
       MainApp(
@@ -40,6 +41,7 @@ void main() {
         hints: hints == null ? null : InMemoryHintBook(hints),
         step: Duration.zero,
         hintCooldown: hintCooldown,
+        hintLimit: hintLimit,
       ),
     );
     await tester.pumpAndSettle();
@@ -206,6 +208,16 @@ void main() {
 
       final field = tester.widget<TextField>(find.byType(TextField));
       expect(field.controller!.text, 'yards');
+    });
+
+    testWidgets('a physical keyboard ignores non-letter characters',
+        (tester) async {
+      await pumpGame(tester);
+
+      await type(tester, 'a1b2c');
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.controller!.text, 'abc');
     });
 
     testWidgets('backspace removes the last letter', (tester) async {
@@ -603,8 +615,7 @@ void main() {
 
       // The leaking clue is refused, so a letter is revealed instead.
       expect(find.textContaining('aback'), findsNothing);
-      expect(find.textContaining('position 1'), findsOneWidget);
-      expect(find.textContaining('"A"'), findsOneWidget);
+      expect(find.textContaining('The letter at position'), findsOneWidget);
     });
 
     testWidgets('reveals a letter when the word has no clue', (tester) async {
@@ -613,7 +624,7 @@ void main() {
       await tester.tap(find.byType(HintButton));
       await tester.pumpAndSettle();
 
-      expect(find.text('The letter at position 1 is "A"'), findsOneWidget);
+      expect(find.textContaining('The letter at position'), findsOneWidget);
     });
 
     testWidgets('the revealed letter stays on the board', (tester) async {
@@ -624,10 +635,11 @@ void main() {
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
-      expect(tester.widget<Tile>(find.byKey(const ValueKey('tile-0-0'))).letter,
-          'a');
-      expect(tester.widget<Tile>(find.byKey(const ValueKey('tile-0-1'))).letter,
-          isEmpty);
+      final revealed = tester
+          .widgetList<Tile>(find.byType(Tile))
+          .where((tile) => tile.letter.isNotEmpty)
+          .toList();
+      expect(revealed, hasLength(1));
     });
 
     testWidgets('counts down the minute before the hint returns',
@@ -667,47 +679,159 @@ void main() {
       expect(find.textContaining(':'), findsNothing);
     });
 
-    testWidgets('a second hint reveals a second letter', (tester) async {
-      await pumpGame(tester, word: 'abled');
+    testWidgets('clicks alternate the clue and two letters', (tester) async {
+      await pumpGame(
+        tester,
+        hints: const {'abbey': 'a monastery'},
+      );
 
-      await tester.tap(find.byIcon(Icons.lightbulb_outline));
-      await tester.pumpAndSettle();
-      expect(find.text('The letter at position 1 is "A"'), findsOneWidget);
+      Future<void> clickHint() async {
+        await tester.tap(find.byIcon(Icons.lightbulb_outline));
+        await tester.pumpAndSettle();
+      }
+
+      await clickHint();
+      expect(find.text('The word means: a monastery'), findsOneWidget);
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.lightbulb_outline));
-      await tester.pumpAndSettle();
-      expect(find.text('The letter at position 2 is "B"'), findsOneWidget);
+      await clickHint();
+      expect(find.textContaining('The letter at position'), findsOneWidget);
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
-      expect(
-        tester.widget<Tile>(find.byKey(const ValueKey('tile-0-0'))).letter,
-        'a',
-      );
-      expect(
-        tester.widget<Tile>(find.byKey(const ValueKey('tile-0-1'))).letter,
-        'b',
-      );
+      await clickHint();
+      expect(find.text('The word means: a monastery'), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      await clickHint();
+      expect(find.textContaining('The letter at position'), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      final revealed = tester
+          .widgetList<Tile>(find.byType(Tile))
+          .where((tile) => tile.letter.isNotEmpty)
+          .toList();
+      expect(revealed, hasLength(2));
+
+      await clickHint();
+      expect(find.text('The word means: a monastery'), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      await clickHint();
+      expect(find.text('The word means: a monastery'), findsOneWidget);
+      expect(find.byTooltip('Hint'), findsOneWidget);
     });
 
-    testWidgets('the button goes dry once every letter is revealed',
-        (tester) async {
+    testWidgets('the button goes dry after two letters', (tester) async {
       await pumpGame(tester, word: 'abled');
 
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 2; i++) {
         await tester.tap(find.byIcon(Icons.lightbulb_outline));
         await tester.pumpAndSettle();
         await tester.tap(find.text('OK'));
         await tester.pumpAndSettle();
       }
 
+      expect(find.byTooltip('No hint available'), findsOneWidget);
       await tester.tap(find.byIcon(Icons.lightbulb_outline));
       await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+    });
 
-      expect(find.textContaining('every letter is already on the board'),
-          findsOneWidget);
+    testWidgets('a hinted letter never replaces a submitted guess',
+        (tester) async {
+      await pumpGame(tester, word: 'abbey');
+
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      await submit(tester, 'crush');
+
+      final tile = tester.widget<Tile>(find.byKey(const ValueKey('tile-0-0')));
+      expect(tile.letter, 'c');
+      expect(tile.type, HitType.miss);
+    });
+
+    testWidgets('a hinted letter does not hide a typed letter',
+        (tester) async {
+      await pumpGame(tester, word: 'abbey');
+
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      await type(tester, 'z');
+
+      expect(
+        tester.widget<Tile>(find.byKey(const ValueKey('tile-0-0'))).letter,
+        'z',
+      );
+    });
+
+    testWidgets('a second cooldown keeps ticking', (tester) async {
+      var cooldown = const Duration(seconds: 2);
+      var readyAt = DateTime(2026);
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return Scaffold(
+                body: Center(
+                  child: HintButton(
+                    hintReadyAt: readyAt,
+                    enabled: true,
+                    cooldownRemaining: cooldown,
+                    onPressed: () {},
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+
+      expect(find.text('0:02'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text('0:02'), findsNothing);
+
+      rebuild(() {
+        cooldown = const Duration(seconds: 5);
+        readyAt = readyAt.add(const Duration(seconds: 1));
+      });
+      await tester.pump();
+      expect(find.text('0:05'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('0:04'), findsOneWidget);
+    });
+
+    testWidgets('the hint limit disables the button', (tester) async {
+      await pumpGame(
+        tester,
+        hints: const {'abbey': 'a monastery'},
+        hintLimit: 1,
+      );
+
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('No hint available'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.lightbulb_outline));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
     });
 
     testWidgets('Play Again re-arms the hint immediately', (tester) async {
@@ -762,7 +886,7 @@ void main() {
 
       final clue = hints.descriptionOf(answer);
       if (clue == null) {
-        expect(find.textContaining('position 1'), findsOneWidget);
+        expect(find.textContaining('The letter at position'), findsOneWidget);
       } else {
         expect(find.text('The word means: $clue'), findsOneWidget);
       }

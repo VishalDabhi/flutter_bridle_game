@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// A transparent text field that mirrors [controller] and reports submissions.
 ///
@@ -44,6 +45,9 @@ class GuessInput extends StatelessWidget {
             keyboardType: TextInputType.none,
             textInputAction: TextInputAction.done,
             maxLength: 5,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp('[a-zA-Z]')),
+            ],
             showCursor: false,
             autocorrect: false,
             enableSuggestions: false,

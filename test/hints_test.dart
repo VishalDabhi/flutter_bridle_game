@@ -171,18 +171,19 @@ void main() {
 
       expect(controller.useHint(), HintStatus.revealedLetter);
       expect(controller.hintText, isNull);
-      expect(controller.lastHintColumn, 0);
-      expect(controller.hintLetters, {0: {0}});
+      expect(controller.lastHintColumn, isNotNull);
+      expect(controller.hintLetters[0]!.single, controller.lastHintColumn);
     });
 
-    test('reveals the first letter no guess has pinned down', () {
+    test('reveals a letter no guess has pinned down', () {
       final game = _game()..guess('yards');
       final controller = GameController(game: game);
 
       controller.useHint();
 
-      expect(controller.lastHintColumn, 2);
-      expect(game.hiddenWord[2].char, 'b');
+      final column = controller.lastHintColumn!;
+      expect(column, isIn([2, 3, 4]));
+      expect(controller.hintLetters[game.activeIndex], {column});
     });
 
     test('rejects a clue that gives the word away', () {
@@ -204,6 +205,7 @@ void main() {
       );
       controller.useHint();
 
+      expect(controller.hintAvailable, isTrue);
       expect(controller.canHint, isFalse);
       expect(controller.useHint(), HintStatus.coolingDown);
       expect(controller.hintsUsed, 1);
@@ -231,10 +233,10 @@ void main() {
       // The clue was already shown, so this hint gives up a letter instead.
       expect(controller.useHint(), HintStatus.revealedLetter);
       expect(controller.hintsUsed, 2);
-      expect(controller.hintLetters, {0: {0}});
+      expect(controller.hintLetters[0]!.single, controller.lastHintColumn);
     });
 
-    test('a repeat hint skips the clue it already showed', () {
+    test('alternates the clue and two letters, then repeats the clue', () {
       var now = DateTime(2026);
       final controller = GameController(
         game: _game(),
@@ -246,32 +248,89 @@ void main() {
 
       now = now.add(const Duration(seconds: 60));
       expect(controller.useHint(), HintStatus.revealedLetter);
+      final first = controller.lastHintColumn!;
 
-      // Each further hint reveals the next letter no guess has pinned down
-      // rather than repeating the clue.
+      now = now.add(const Duration(seconds: 60));
+      expect(controller.useHint(), HintStatus.described);
+
       now = now.add(const Duration(seconds: 60));
       expect(controller.useHint(), HintStatus.revealedLetter);
+      final second = controller.lastHintColumn!;
+      expect(second, isNot(first));
+      expect(controller.hintLetters[0], {first, second});
       expect(controller.hintText, 'a monastery');
-      expect(controller.hintLetters, {0: {0, 1}});
+
+      now = now.add(const Duration(seconds: 60));
+      expect(controller.useHint(), HintStatus.described);
+
+      now = now.add(const Duration(seconds: 60));
+      expect(controller.useHint(), HintStatus.described);
+      expect(controller.hintsUsed, 6);
+      expect(controller.hintAvailable, isTrue);
     });
 
-    test('revealed letters accumulate across hints', () {
+    test('reveals at most two letters when the word has no clue', () {
       var now = DateTime(2026);
       final controller = GameController(game: _game(), clock: () => now);
-      final revealed = <int>{};
 
-      for (var i = 0; i < 5; i++) {
+      expect(controller.useHint(), HintStatus.revealedLetter);
+      final first = controller.lastHintColumn!;
+
+      now = now.add(const Duration(seconds: 60));
+      expect(controller.useHint(), HintStatus.revealedLetter);
+      final second = controller.lastHintColumn!;
+      expect(second, isNot(first));
+      expect(controller.hintLetters[0], {first, second});
+
+      now = now.add(const Duration(seconds: 60));
+      expect(controller.hintAvailable, isFalse);
+      expect(controller.useHint(), HintStatus.unavailable);
+      expect(controller.hintsUsed, 2);
+    });
+
+    test('the two-letter limit lasts across guesses', () {
+      final controller = GameController(
+        game: _game(),
+        hintCooldown: Duration.zero,
+      );
+
+      expect(controller.useHint(), HintStatus.revealedLetter);
+      for (final letter in 'crush'.split('')) {
+        controller.type(letter);
+      }
+      expect(controller.submit(), SubmitStatus.accepted);
+
+      expect(controller.useHint(), HintStatus.revealedLetter);
+      expect(controller.hintsUsed, 2);
+      expect(controller.hintAvailable, isFalse);
+      expect(controller.useHint(), HintStatus.unavailable);
+    });
+
+    test('skips positions the player has already typed', () {
+      final controller = GameController(game: _game());
+      controller.type('a');
+
+      expect(controller.useHint(), HintStatus.revealedLetter);
+      final column = controller.lastHintColumn!;
+      expect(column, isNot(0));
+      expect(controller.hintLetters[0], {column});
+    });
+
+    test('a hint with nothing to reveal does not start a cooldown', () {
+      var now = DateTime(2026);
+      final controller = GameController(game: _game(), clock: () => now);
+
+      for (var i = 0; i < 2; i++) {
         if (i > 0) now = now.add(const Duration(seconds: 60));
         controller.useHint();
-        revealed.add(controller.lastHintColumn!);
       }
-
-      expect(revealed, {0, 1, 2, 3, 4});
-      expect(controller.hintLetters, {0: {0, 1, 2, 3, 4}});
-
-      // Nothing left to reveal.
       now = now.add(const Duration(seconds: 60));
+      final readyAt = controller.hintReadyAt;
+      final hintsUsed = controller.hintsUsed;
+
       expect(controller.useHint(), HintStatus.unavailable);
+      expect(controller.hintsUsed, hintsUsed);
+      expect(controller.hintReadyAt, readyAt);
     });
 
     test('a hint limit is honoured when one is set', () {
@@ -298,7 +357,7 @@ void main() {
 
       expect(unrevealedPositions(game), isEmpty);
       expect(controller.canHint, isFalse);
-      expect(controller.useHint(), HintStatus.limitReached);
+      expect(controller.useHint(), HintStatus.roundOver);
     });
 
     test('cannot be used once the round is over', () {
@@ -306,7 +365,7 @@ void main() {
       final controller = GameController(game: game);
 
       expect(controller.canHint, isFalse);
-      expect(controller.useHint(), HintStatus.limitReached);
+      expect(controller.useHint(), HintStatus.roundOver);
     });
 
     test('Play Again re-arms the hint immediately', () {

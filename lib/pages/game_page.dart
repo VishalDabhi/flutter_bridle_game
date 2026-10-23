@@ -17,12 +17,14 @@ class GamePage extends StatefulWidget {
   ///
   /// [seed] makes the hidden word reproducible, [step] controls how long
   /// the tile flip cascade takes; tests pass a zero [step] to skip it.
-  /// [hints] supplies clues for the hint button.
+  /// [hints] supplies clues for the hint button, and [hintLimit] caps how many
+  /// hints a round allows.
   const GamePage({
     required this.wordList,
     this.seed,
     this.step = const Duration(milliseconds: 120),
     this.hintCooldown = GameController.defaultHintCooldown,
+    this.hintLimit,
     this.hints,
     super.key,
   });
@@ -38,6 +40,9 @@ class GamePage extends StatefulWidget {
 
   /// How long a spent hint takes to come back.
   final Duration hintCooldown;
+
+  /// The most hints one round allows, or `null` for no limit.
+  final int? hintLimit;
 
   /// Clues for the hint button, or `null` for none.
   final HintBook? hints;
@@ -62,6 +67,7 @@ class _GamePageState extends State<GamePage> {
       game: Game(wordList: widget.wordList, seed: widget.seed),
       hintBook: widget.hints ?? InMemoryHintBook.empty(),
       hintCooldown: widget.hintCooldown,
+      hintLimit: widget.hintLimit,
     );
   }
 
@@ -185,7 +191,7 @@ class _GamePageState extends State<GamePage> {
             actions: [
               HintButton(
                 hintReadyAt: _controller.hintReadyAt,
-                enabled: !game.isOver && !_controller.isRevealing,
+                enabled: _controller.hintAvailable,
                 cooldownRemaining: _controller.hintCooldownRemaining,
                 onPressed: _onHint,
               ),
