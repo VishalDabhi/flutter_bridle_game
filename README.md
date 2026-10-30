@@ -2,10 +2,10 @@
 
 A five-letter word-guessing game in the style of Wordle, built with Flutter.
 
-Guess the hidden five-letter word in six tries. Each tile reports how its
-letter scored: green for the right letter in the right place, yellow for the
-right letter in the wrong place, grey for a letter that isn't in the word.
-Letters already scored as misses grey out on the on-screen keyboard.
+Guess the hidden five-letter word before your guesses run out. Each tile
+reports how its letter scored: green for the right letter in the right place,
+yellow for the right letter in the wrong place, grey for a letter that isn't in
+the word. Letters already scored as misses grey out on the on-screen keyboard.
 
 ## Playing
 
@@ -15,10 +15,16 @@ flutter run
 
 Type on the on-screen keyboard or on a physical one, then press enter. Each
 round has a hint: a lightbulb in the app bar shows the hidden word's clue,
-then reveals a random letter after a minute, shows the clue again, and reveals
+then reveals a random letter after a cooldown, shows the clue again, and reveals
 a second random letter. After that it keeps showing the clue. If the word has
 no clue, the first two hints reveal random letters and then the button is used
 up.
+
+Each round is a level. Winning advances to the next level and losing retries
+the current one. Levels cycle through Easy, Medium, and Hard every three
+levels, with fewer guesses and a slower hint recharge at higher difficulties.
+The current level is saved locally, so reopening the app resumes from it.
+There are no accounts or sign-in.
 
 ## How it is put together
 
@@ -27,6 +33,8 @@ up.
 | `lib/game.dart` | The rules: `Game`, `Word`, `Letter`, `HitType`. Pure Dart, no Flutter imports. |
 | `lib/word_list.dart` | The vocabulary: `WordList`, `AssetWordList`, `InMemoryWordList`. |
 | `lib/hints.dart` | Hint clues: `HintBook`, `SafeHint`, `unrevealedPositions`. |
+| `lib/level_config.dart` | Difficulty tiers and the rules for each level. |
+| `lib/level_store.dart` | Local persistence for the level to resume from. |
 | `lib/game_controller.dart` | UI-facing controller holding the round, the letters being typed, and the hint state. |
 | `lib/theme.dart` | The Wordle palette and the app theme. |
 | `lib/pages/game_page.dart` | Board, keyboard, hint button, reveal cascade, and rejections. |
@@ -38,8 +46,9 @@ Clues come from [WordNet 3.0](https://wordnet.princeton.edu/) under its own
 licence, bundled as `assets/words/wordnet-LICENSE.txt`. See
 `assets/words/hints.SOURCE.md` for coverage and how to regenerate them.
 
-`main()` loads the word lists from `assets/words/` before the first frame, so
-the game never guesses from a hard-coded list and the UI never waits on I/O.
+`main()` loads the word lists and clues from `assets/words/` and the saved
+level from local preferences before the first frame, so the game never guesses
+from a hard-coded list and the UI never waits on I/O.
 
 The engine takes its vocabulary as a parameter, which keeps it free of Flutter
 and lets tests play a round against a two-word list. `Game(seed: n)` and an
@@ -58,10 +67,12 @@ flutter test
 - `test/word_list_test.dart` validates the shipped word files and the loader.
 - `test/hints_test.dart` covers clue lookup, the leak guard, the alternating
   clue/letter hints, and validates the shipped `hints.json`.
+- `test/level_test.dart` covers the difficulty cycle and local level storage.
 - `test/widget_test.dart` plays real rounds: typing on both keyboards,
-  rejections, the flip cascade, key colours, the hint flow, and the end-of-round
-  panel. Pass `step: Duration.zero` to `MainApp` to settle animations instantly.
+  rejections, the flip cascade, key colours, the hint flow, level progression,
+  and the end-of-round panel. Pass `step: Duration.zero` to `MainApp` to settle
+  animations instantly.
 
 ## Not built yet
 
-Stats and streaks, a shareable result grid, and hard mode.
+Stats and streaks, a shareable result grid, and cloud sync.

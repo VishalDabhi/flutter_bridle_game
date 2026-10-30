@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:bk_lottery/game.dart';
 import 'package:bk_lottery/game_controller.dart';
 import 'package:bk_lottery/hints.dart';
+import 'package:bk_lottery/level_config.dart';
+import 'package:bk_lottery/level_store.dart';
 import 'package:bk_lottery/word_list.dart';
 import 'package:bk_lottery/widgets/board.dart';
+import 'package:bk_lottery/widgets/clue_banner.dart';
 import 'package:bk_lottery/widgets/guess_input.dart';
 import 'package:bk_lottery/widgets/hint_button.dart';
 import 'package:bk_lottery/widgets/keyboard.dart';
@@ -15,15 +18,17 @@ import 'package:flutter/material.dart';
 class GamePage extends StatefulWidget {
   /// Creates a page that plays a round drawn from [wordList].
   ///
-  /// [seed] makes the hidden word reproducible, [step] controls how long
+  /// [levelStore] supplies the level to resume from and remembers the next
+  /// one. [seed] makes the hidden word reproducible, [step] controls how long
   /// the tile flip cascade takes; tests pass a zero [step] to skip it.
   /// [hints] supplies clues for the hint button, and [hintLimit] caps how many
-  /// hints a round allows.
+  /// hints a round allows. [hintCooldown] overrides the level's cooldown.
   const GamePage({
     required this.wordList,
+    required this.levelStore,
     this.seed,
     this.step = const Duration(milliseconds: 120),
-    this.hintCooldown = GameController.defaultHintCooldown,
+    this.hintCooldown,
     this.hintLimit,
     this.hints,
     super.key,
@@ -32,14 +37,17 @@ class GamePage extends StatefulWidget {
   /// The vocabulary the round is drawn from.
   final WordList wordList;
 
+  /// Remembers the level the next round should start at.
+  final LevelStore levelStore;
+
   /// The seed for the hidden word, or `null` to choose at random.
   final int? seed;
 
   /// The delay between two consecutive tile flips.
   final Duration step;
 
-  /// How long a spent hint takes to come back.
-  final Duration hintCooldown;
+  /// Overrides the level's hint cooldown when set.
+  final Duration? hintCooldown;
 
   /// The most hints one round allows, or `null` for no limit.
   final int? hintLimit;
@@ -52,7 +60,8 @@ class GamePage extends StatefulWidget {
 }
 
 class _GamePageState extends State<GamePage> {
-  late final GameController _controller;
+  late GameController _controller;
+  late int _level;
   final FocusNode _focusNode = FocusNode();
 
   Timer? _revealTimer;
@@ -60,13 +69,32 @@ class _GamePageState extends State<GamePage> {
   int _revealedTiles = 0;
   int _shake = 0;
 
+  LevelConfig get _levelConfig => LevelConfig.forLevel(_level);
+
+  String? _resolveAutoClue(Game game) {
+    final hintBook = widget.hints;
+    if (hintBook == null) return null;
+    final word = game.hiddenWord.toString();
+    return SafeHint.describe(hintBook, word);
+  }
+
   @override
   void initState() {
     super.initState();
-    _controller = GameController(
-      game: Game(wordList: widget.wordList, seed: widget.seed),
+    _level = widget.levelStore.currentLevel;
+    _controller = _createController();
+  }
+
+  GameController _createController() {
+    final config = _levelConfig;
+    return GameController(
+      game: Game(
+        wordList: widget.wordList,
+        maxGuesses: config.maxGuesses,
+        seed: widget.seed,
+      ),
       hintBook: widget.hints ?? InMemoryHintBook.empty(),
-      hintCooldown: widget.hintCooldown,
+      hintCooldown: widget.hintCooldown ?? config.hintCooldown,
       hintLimit: widget.hintLimit,
     );
   }
@@ -84,7 +112,11 @@ class _GamePageState extends State<GamePage> {
 
     switch (_controller.submit()) {
       case SubmitStatus.accepted:
+        if (_controller.game.didWin) {
+          unawaited(_rememberNextLevel());
+        }
         _startReveal();
+        setState(() {});
       case SubmitStatus.tooShort:
         _reject('Guesses must be exactly ${Word.wordLength} letters.');
       case SubmitStatus.notInList:
@@ -139,20 +171,32 @@ class _GamePageState extends State<GamePage> {
     _controller.endReveal();
   }
 
-  /// Starts a new round with a fresh board and keyboard.
-  void _onPlayAgain() {
+  /// Saves the level that should be resumed after a win.
+  Future<void> _rememberNextLevel() =>
+      widget.levelStore.saveLevel(_level + 1);
+
+  /// Starts the level after a win.
+  void _onNextLevel() => _beginLevel(_level + 1);
+
+  /// Replays the current level after a loss.
+  void _onRetry() => _beginLevel(_level);
+
+  /// Starts [level] with a fresh board and keyboard.
+  void _beginLevel(int level) {
     _revealTimer?.cancel();
     _clearToast();
+    final oldController = _controller;
+    _level = level;
+    _controller = _createController();
     setState(() {
       _revealedRow = -1;
       _revealedTiles = 0;
       _shake = 0;
     });
-    _controller.reset();
-    // Disabling the field at the end of a round drops focus, so take it back
-    // once the rebuilt field is enabled again.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
+      oldController.dispose();
+      if (!mounted) return;
+      _focusNode.requestFocus();
     });
   }
 
@@ -184,14 +228,38 @@ class _GamePageState extends State<GamePage> {
       listenable: _controller,
       builder: (context, _) {
         final game = _controller.game;
+        final autoClue = (widget.hints != null &&
+                !game.isOver &&
+                _controller.guessesUsed == 0)
+            ? _resolveAutoClue(game)
+            : null;
+        final hasClueBanner = autoClue != null;
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Birdle'),
+            leading: const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Birdle',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            leadingWidth: 70,
+            title: Text(
+              '$_level/${_levelConfig.difficulty.label}',
+              textAlign: TextAlign.center,
+            ),
+            centerTitle: true,
             actions: [
               HintButton(
                 hintReadyAt: _controller.hintReadyAt,
-                enabled: _controller.hintAvailable,
+                enabled: _controller.hintAvailable && !hasClueBanner,
                 cooldownRemaining: _controller.hintCooldownRemaining,
                 onPressed: _onHint,
               ),
@@ -200,6 +268,8 @@ class _GamePageState extends State<GamePage> {
           ),
           body: Column(
             children: [
+              if (hasClueBanner)
+                ClueBanner(key: const ValueKey('auto-clue'), clue: autoClue),
               Expanded(
                 child: Board(
                   game: game,
@@ -217,7 +287,7 @@ class _GamePageState extends State<GamePage> {
                   didWin: game.didWin,
                   attempts: _controller.guessesUsed,
                   hiddenWord: game.hiddenWord.toString(),
-                  onPlayAgain: _onPlayAgain,
+                  onContinue: game.didWin ? _onNextLevel : _onRetry,
                 )
               else
                 Keyboard(

@@ -8,7 +8,7 @@ class ResultPanel extends StatelessWidget {
     required this.didWin,
     required this.attempts,
     required this.hiddenWord,
-    required this.onPlayAgain,
+    required this.onContinue,
     super.key,
   });
 
@@ -21,8 +21,8 @@ class ResultPanel extends StatelessWidget {
   /// The word that was hidden.
   final String hiddenWord;
 
-  /// Called to start a new round.
-  final VoidCallback onPlayAgain;
+  /// Called to advance after a win or retry after a loss.
+  final VoidCallback onContinue;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +51,11 @@ class ResultPanel extends StatelessWidget {
                 style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 15),
               ),
               const SizedBox(height: 18),
-              PlayAgainButton(onPressed: onPlayAgain),
+              PlayAgainButton(
+                onPressed: onContinue,
+                label: didWin ? 'Next Level' : 'Try Again',
+                icon: didWin ? Icons.arrow_forward : Icons.refresh,
+              ),
             ],
           ),
         ),
@@ -67,13 +71,24 @@ class ResultPanel extends StatelessWidget {
       };
 }
 
-/// Button that starts a fresh round, shown once the current one is over.
+/// The primary button shown once the current round is over.
 class PlayAgainButton extends StatelessWidget {
   /// Creates a button that calls [onPressed] when tapped.
-  const PlayAgainButton({required this.onPressed, super.key});
+  const PlayAgainButton({
+    required this.onPressed,
+    this.label = 'Play Again',
+    this.icon = Icons.refresh,
+    super.key,
+  });
 
-  /// Called to start a new round.
+  /// Called when the player continues.
   final VoidCallback onPressed;
+
+  /// Text shown on the button.
+  final String label;
+
+  /// Icon shown before [label].
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -81,8 +96,8 @@ class PlayAgainButton extends StatelessWidget {
       width: double.infinity,
       child: FilledButton.icon(
         onPressed: onPressed,
-        icon: const Icon(Icons.refresh),
-        label: const Text('Play Again'),
+        icon: Icon(icon),
+        label: Text(label),
         style: FilledButton.styleFrom(
           backgroundColor: BirdleColors.hit,
           foregroundColor: Colors.white,

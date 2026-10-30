@@ -1,6 +1,9 @@
 import 'package:bk_lottery/game.dart';
 import 'package:bk_lottery/hints.dart';
+import 'package:bk_lottery/level_config.dart';
+import 'package:bk_lottery/level_store.dart';
 import 'package:bk_lottery/main.dart';
+
 import 'package:bk_lottery/widgets/keyboard.dart';
 import 'package:bk_lottery/word_list.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +34,7 @@ void main() {
     Map<String, String>? hints,
     Duration hintCooldown = Duration.zero,
     int? hintLimit,
+    LevelStore? levelStore,
   }) async {
     await tester.pumpWidget(
       MainApp(
@@ -38,6 +42,7 @@ void main() {
           answers: [word],
           allowed: allowed ?? const [hidden, ...wrongGuesses],
         ),
+        levelStore: levelStore ?? _MemoryLevelStore(),
         hints: hints == null ? null : InMemoryHintBook(hints),
         step: Duration.zero,
         hintCooldown: hintCooldown,
@@ -132,6 +137,176 @@ void main() {
     });
   });
 
+  group('levels', () {
+    testWidgets('starts at the saved level and difficulty', (tester) async {
+      final store = _MemoryLevelStore(initialLevel: 4);
+
+      await pumpGame(tester, levelStore: store);
+
+      expect(find.text('4/Medium'), findsOneWidget);
+      expect(
+        find.byType(Tile),
+        findsNWidgets(LevelConfig.forLevel(4).maxGuesses * 5),
+      );
+    });
+
+    testWidgets('a win saves the next level and continues', (tester) async {
+      final store = _MemoryLevelStore();
+
+      await pumpGame(tester, levelStore: store);
+      await submit(tester, hidden);
+
+      expect(find.text('You won!'), findsOneWidget);
+      expect(store.currentLevel, 2);
+
+      await tester.tap(find.byType(PlayAgainButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2/Easy'), findsOneWidget);
+      expect(find.byType(PlayAgainButton), findsNothing);
+    });
+
+    testWidgets('a loss keeps the level and retries it', (tester) async {
+      final store = _MemoryLevelStore();
+
+      await pumpGame(tester, levelStore: store);
+      await loseRound(tester);
+
+      expect(find.text('Out of guesses'), findsOneWidget);
+      expect(store.currentLevel, 1);
+
+      await tester.tap(find.byType(PlayAgainButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1/Easy'), findsOneWidget);
+      expect(find.byType(PlayAgainButton), findsNothing);
+    });
+
+    testWidgets('the fourth level switches to medium', (tester) async {
+      final store = _MemoryLevelStore(initialLevel: 3);
+
+      await pumpGame(tester, levelStore: store);
+      await submit(tester, hidden);
+
+      expect(store.currentLevel, 4);
+
+      await tester.tap(find.byType(PlayAgainButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('4/Medium'), findsOneWidget);
+      expect(
+        find.byType(Tile),
+        findsNWidgets(LevelConfig.forLevel(4).maxGuesses * 5),
+      );
+    });
+
+    testWidgets('the seventh level switches to hard', (tester) async {
+      await pumpGame(
+        tester,
+        levelStore: _MemoryLevelStore(initialLevel: 7),
+      );
+
+      expect(find.text('7/Hard'), findsOneWidget);
+      expect(
+        find.byType(Tile),
+        findsNWidgets(LevelConfig.forLevel(7).maxGuesses * 5),
+      );
+    });
+
+    testWidgets('uses the level hint cooldown', (tester) async {
+      await tester.pumpWidget(
+        MainApp(
+          wordList: InMemoryWordList(
+            answers: const [hidden],
+            allowed: const [hidden, ...wrongGuesses],
+          ),
+          levelStore: _MemoryLevelStore(initialLevel: 4),
+          hints: InMemoryHintBook(const {'abbey': 'a monastery'}),
+          step: Duration.zero,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await submit(tester, wrongGuesses.first);
+      await tester.tap(find.byType(HintButton));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('OK'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('1:30'), findsOneWidget);
+    });
+
+    testWidgets('reopening the app resumes the saved level', (tester) async {
+      final store = _MemoryLevelStore();
+
+      await pumpGame(tester, levelStore: store);
+      await submit(tester, hidden);
+      expect(store.currentLevel, 2);
+
+      await tester.pumpWidget(const SizedBox());
+      await pumpGame(tester, levelStore: store);
+
+      expect(find.text('2/Easy'), findsOneWidget);
+    });
+  });
+
+  group('clue banner', () {
+    testWidgets('shows the clue automatically on a fresh level and hides after first guess', (tester) async {
+      await tester.pumpWidget(
+        MainApp(
+          wordList: InMemoryWordList(
+            answers: const [hidden],
+            allowed: const [hidden, ...wrongGuesses],
+          ),
+          levelStore: _MemoryLevelStore(),
+          hints: InMemoryHintBook(const {hidden: 'a tree with needles'}),
+          step: Duration.zero,
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('auto-clue')), findsOneWidget);
+
+      await submit(tester, wrongGuesses.first);
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('auto-clue')), findsNothing);
+    });
+
+    testWidgets('hint button is disabled while clue banner is visible and enabled after first guess', (tester) async {
+      await tester.pumpWidget(
+        MainApp(
+          wordList: InMemoryWordList(
+            answers: const [hidden],
+            allowed: const [hidden, ...wrongGuesses],
+          ),
+          levelStore: _MemoryLevelStore(),
+          hints: InMemoryHintBook(const {hidden: 'a tree with needles'}),
+          step: Duration.zero,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('auto-clue')), findsOneWidget);
+      final buttonBefore = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.lightbulb_outline),
+      );
+      expect(buttonBefore.onPressed, isNull);
+
+      await submit(tester, wrongGuesses.first);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('auto-clue')), findsNothing);
+      final buttonAfter = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.lightbulb_outline),
+      );
+      expect(buttonAfter.onPressed, isNotNull);
+    });
+  });
+
   group('tiles are visible', () {
     testWidgets('every tile is painted at full height before any guess',
         (tester) async {
@@ -163,6 +338,7 @@ void main() {
             answers: const [hidden],
             allowed: const [hidden, ...wrongGuesses],
           ),
+          levelStore: _MemoryLevelStore(),
           step: const Duration(milliseconds: 50),
         ),
       );
@@ -543,6 +719,7 @@ void main() {
             answers: const [hidden],
             allowed: const [hidden, ...wrongGuesses],
           ),
+          levelStore: _MemoryLevelStore(),
           step: step,
         ),
       );
@@ -597,6 +774,7 @@ void main() {
     testWidgets('shows the meaning of the hidden word', (tester) async {
       await pumpGame(tester, hints: const {'abbey': 'a monastery'});
 
+      await submit(tester, wrongGuesses.first);
       await tester.tap(find.byType(HintButton));
       await tester.pumpAndSettle();
 
@@ -650,6 +828,8 @@ void main() {
         hintCooldown: const Duration(seconds: 60),
       );
 
+      await submit(tester, wrongGuesses.first);
+
       // The countdown ticks on a live timer, so these tests pump single
       // frames: settling would run the clock out before asserting.
       await tester.tap(find.byIcon(Icons.lightbulb_outline));
@@ -676,7 +856,13 @@ void main() {
       // The countdown clears itself once it runs out.
       await tester.pump(const Duration(seconds: 6));
       expect(find.text('0:05'), findsNothing);
-      expect(find.textContaining(':'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(HintButton),
+          matching: find.textContaining(':'),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('clicks alternate the clue and two letters', (tester) async {
@@ -684,6 +870,8 @@ void main() {
         tester,
         hints: const {'abbey': 'a monastery'},
       );
+
+      await submit(tester, wrongGuesses.first);
 
       Future<void> clickHint() async {
         await tester.tap(find.byIcon(Icons.lightbulb_outline));
@@ -710,11 +898,11 @@ void main() {
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
-      final revealed = tester
-          .widgetList<Tile>(find.byType(Tile))
-          .where((tile) => tile.letter.isNotEmpty)
-          .toList();
-      expect(revealed, hasLength(2));
+      final row1Tiles = [
+        for (var col = 0; col < 5; col++)
+          tester.widget<Tile>(find.byKey(ValueKey('tile-1-$col'))),
+      ].where((tile) => tile.letter.isNotEmpty);
+      expect(row1Tiles, hasLength(2));
 
       await clickHint();
       expect(find.text('The word means: a monastery'), findsOneWidget);
@@ -823,6 +1011,7 @@ void main() {
         hintLimit: 1,
       );
 
+      await submit(tester, wrongGuesses.first);
       await tester.tap(find.byIcon(Icons.lightbulb_outline));
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
@@ -841,6 +1030,7 @@ void main() {
         hintCooldown: const Duration(seconds: 60),
       );
 
+      await submit(tester, wrongGuesses.first);
       await tester.tap(find.byIcon(Icons.lightbulb_outline));
       await tester.pump();
       await tester.pump();
@@ -854,6 +1044,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('1:00'), findsNothing);
+      await submit(tester, wrongGuesses.first);
       await tester.tap(find.byIcon(Icons.lightbulb_outline));
       await tester.pump();
       await tester.pump();
@@ -877,10 +1068,17 @@ void main() {
       final answer = Game(wordList: wordList, seed: 0).hiddenWord.toString();
 
       await tester.pumpWidget(
-        MainApp(wordList: wordList, hints: hints, seed: 0, step: Duration.zero),
+        MainApp(
+          wordList: wordList,
+          levelStore: _MemoryLevelStore(),
+          hints: hints,
+          seed: 0,
+          step: Duration.zero,
+        ),
       );
       await tester.pumpAndSettle();
 
+      await submit(tester, wrongGuesses.first);
       await tester.tap(find.byType(HintButton));
       await tester.pumpAndSettle();
 
@@ -994,7 +1192,12 @@ void main() {
       final answer = Game(wordList: words, seed: 0).hiddenWord.toString();
 
       await tester.pumpWidget(
-        MainApp(wordList: words, seed: 0, step: Duration.zero),
+        MainApp(
+          wordList: words,
+          levelStore: _MemoryLevelStore(),
+          seed: 0,
+          step: Duration.zero,
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -1027,5 +1230,19 @@ Future<void> loseRound(WidgetTester tester) async {
     await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
+  }
+}
+
+class _MemoryLevelStore implements LevelStore {
+  _MemoryLevelStore({int initialLevel = 1}) : _level = initialLevel;
+
+  int _level;
+
+  @override
+  int get currentLevel => _level;
+
+  @override
+  Future<void> saveLevel(int level) async {
+    _level = level;
   }
 }
