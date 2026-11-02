@@ -21,8 +21,8 @@ no clue, the first two hints reveal random letters and then the button is used
 up.
 
 Each round is a level. Winning advances to the next level and losing retries
-the current one. Levels cycle through Easy, Medium, and Hard every three
-levels, with fewer guesses and a slower hint recharge at higher difficulties.
+the current one. Levels cycle through a 7-level loop (2 Easy, 1 Medium, 3 Easy, 1 Hard),
+with fewer guesses and a slower hint recharge at higher difficulties.
 The current level is saved locally, so reopening the app resumes from it.
 There are no accounts or sign-in.
 

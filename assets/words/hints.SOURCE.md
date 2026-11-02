@@ -38,13 +38,9 @@ dart run tool/extract_hints.dart --write   # report, then write the asset
 
 | | Count | Share |
 | --- | --- | --- |
-| Answers with a hint | 2,057 | 88.9% |
-| Dropped: every sense too wordy | 54 | 2.3% |
-| Dropped: every sense spells the word out | 68 | 2.9% |
-| WordNet has no entry | 136 | 5.9% |
+| Answers with a hint | 2,315 | 100.0% |
+| Originally extracted from WordNet 3.0 | 2,057 | 88.9% |
+| Curated supplemental definitions | 258 | 11.1% |
 
-The 136 are mostly inflections such as `abled`, `aping` or `borne`, which
-WordNet does not index as headwords. 94.1% is the ceiling for this source.
-
-**Words without a hint fall back to revealing a single letter position**, so the
-hint button always does something.
+All 2,315 answers now have verified, non-leaking clues under 110 characters,
+ensuring every puzzle round displays a clue banner and rich hint support.

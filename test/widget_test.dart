@@ -139,14 +139,14 @@ void main() {
 
   group('levels', () {
     testWidgets('starts at the saved level and difficulty', (tester) async {
-      final store = _MemoryLevelStore(initialLevel: 4);
+      final store = _MemoryLevelStore(initialLevel: 3);
 
       await pumpGame(tester, levelStore: store);
 
-      expect(find.text('4/Medium'), findsOneWidget);
+      expect(find.text('3/Medium'), findsOneWidget);
       expect(
         find.byType(Tile),
-        findsNWidgets(LevelConfig.forLevel(4).maxGuesses * 5),
+        findsNWidgets(LevelConfig.forLevel(3).maxGuesses * 5),
       );
     });
 
@@ -182,21 +182,21 @@ void main() {
       expect(find.byType(PlayAgainButton), findsNothing);
     });
 
-    testWidgets('the fourth level switches to medium', (tester) async {
-      final store = _MemoryLevelStore(initialLevel: 3);
+    testWidgets('the third level switches to medium', (tester) async {
+      final store = _MemoryLevelStore(initialLevel: 2);
 
       await pumpGame(tester, levelStore: store);
       await submit(tester, hidden);
 
-      expect(store.currentLevel, 4);
+      expect(store.currentLevel, 3);
 
       await tester.tap(find.byType(PlayAgainButton));
       await tester.pumpAndSettle();
 
-      expect(find.text('4/Medium'), findsOneWidget);
+      expect(find.text('3/Medium'), findsOneWidget);
       expect(
         find.byType(Tile),
-        findsNWidgets(LevelConfig.forLevel(4).maxGuesses * 5),
+        findsNWidgets(LevelConfig.forLevel(3).maxGuesses * 5),
       );
     });
 
@@ -220,7 +220,7 @@ void main() {
             answers: const [hidden],
             allowed: const [hidden, ...wrongGuesses],
           ),
-          levelStore: _MemoryLevelStore(initialLevel: 4),
+          levelStore: _MemoryLevelStore(initialLevel: 3),
           hints: InMemoryHintBook(const {'abbey': 'a monastery'}),
           step: Duration.zero,
         ),

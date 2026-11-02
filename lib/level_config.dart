@@ -26,29 +26,41 @@ class LevelConfig {
     required this.hintCooldown,
   });
 
-  /// How many levels each difficulty lasts before moving to the next tier.
-  static const int levelsPerDifficulty = 3;
+  /// The repeating 7-level difficulty cycle:
+  /// 2 Easy -> 1 Medium -> 3 Easy -> 1 Hard.
+  static const List<LevelDifficulty> difficultyCycle = [
+    LevelDifficulty.easy, // 1
+    LevelDifficulty.easy, // 2
+    LevelDifficulty.medium, // 3
+    LevelDifficulty.easy, // 4
+    LevelDifficulty.easy, // 5
+    LevelDifficulty.easy, // 6
+    LevelDifficulty.hard, // 7
+  ];
+
+  /// The number of levels in a complete cycle.
+  static int get cycleLength => difficultyCycle.length;
 
   /// The rules for [level], which must be at least one.
   ///
-  /// Difficulty cycles through easy, medium, and hard every
-  /// [levelsPerDifficulty] levels, so the progression never runs out.
+  /// Difficulty cycles infinitely through [difficultyCycle].
   static LevelConfig forLevel(int level) {
     final safeLevel = level < 1 ? 1 : level;
-    final tier = (safeLevel - 1) ~/ levelsPerDifficulty;
+    final difficulty =
+        difficultyCycle[(safeLevel - 1) % difficultyCycle.length];
 
-    return switch (tier % LevelDifficulty.values.length) {
-      0 => const LevelConfig(
+    return switch (difficulty) {
+      LevelDifficulty.easy => const LevelConfig(
           difficulty: LevelDifficulty.easy,
           maxGuesses: 6,
           hintCooldown: Duration(seconds: 60),
         ),
-      1 => const LevelConfig(
+      LevelDifficulty.medium => const LevelConfig(
           difficulty: LevelDifficulty.medium,
           maxGuesses: 5,
           hintCooldown: Duration(seconds: 90),
         ),
-      _ => const LevelConfig(
+      LevelDifficulty.hard => const LevelConfig(
           difficulty: LevelDifficulty.hard,
           maxGuesses: 4,
           hintCooldown: Duration(seconds: 120),
