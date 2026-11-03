@@ -11,17 +11,143 @@ export 'package:bk_lottery/widgets/hint_button.dart' show HintButton;
 export 'package:bk_lottery/widgets/result_panel.dart' show PlayAgainButton;
 export 'package:bk_lottery/widgets/tile.dart' show Tile;
 
-/// Loads the bundled word lists and clues, then starts the app.
-Future<void> main() async {
+/// Starts the app by immediately rendering the bootstrap splash screen
+/// while loading assets concurrently in the background.
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations([
+  SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  final wordList = await AssetWordList.load();
-  final hints = await AssetHintBook.load();
-  final levelStore = PrefsLevelStore(await SharedPreferences.getInstance());
-  runApp(MainApp(wordList: wordList, hints: hints, levelStore: levelStore));
+  runApp(const AppBootstrap());
+}
+
+/// Bundle of core dependencies needed by [MainApp].
+class AppData {
+  /// Creates the dependency bundle.
+  const AppData({
+    required this.wordList,
+    required this.hints,
+    required this.levelStore,
+  });
+
+  /// Loaded word list.
+  final WordList wordList;
+
+  /// Loaded hint dictionary.
+  final HintBook hints;
+
+  /// Loaded level store.
+  final LevelStore levelStore;
+}
+
+/// The bootstrap widget that mounts immediately to show a loading screen
+/// while asynchronously loading words, clues, and preferences in parallel.
+class AppBootstrap extends StatefulWidget {
+  /// Creates the bootstrap loader.
+  const AppBootstrap({
+    this.loader,
+    super.key,
+  });
+
+  /// Optional loader callback for testing. When `null`, loads real assets.
+  final Future<AppData> Function()? loader;
+
+  @override
+  State<AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends State<AppBootstrap> {
+  late final Future<AppData> _initFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _initFuture = (widget.loader ?? _loadAppData)();
+  }
+
+  static Future<AppData> _loadAppData() async {
+    final results = await Future.wait([
+      AssetWordList.load(),
+      AssetHintBook.load(),
+      SharedPreferences.getInstance(),
+    ]);
+    return AppData(
+      wordList: results[0] as WordList,
+      hints: results[1] as HintBook,
+      levelStore: PrefsLevelStore(results[2] as SharedPreferences),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AppData>(
+      future: _initFuture,
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        if (data != null) {
+          return MainApp(
+            wordList: data.wordList,
+            hints: data.hints,
+            levelStore: data.levelStore,
+          );
+        }
+        if (snapshot.hasError) {
+          return MaterialApp(
+            title: 'Birdle',
+            debugShowCheckedModeBanner: false,
+            theme: birdleTheme(),
+            home: Scaffold(
+              backgroundColor: BirdleColors.background,
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Text(
+                    'Failed to load Birdle: ${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: BirdleColors.ink),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return MaterialApp(
+          title: 'Birdle',
+          debugShowCheckedModeBanner: false,
+          theme: birdleTheme(),
+          home: const Scaffold(
+            backgroundColor: BirdleColors.background,
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'BIRDLE',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 4,
+                      color: BirdleColors.ink,
+                    ),
+                  ),
+                  SizedBox(height: 24),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: BirdleColors.hit,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// The Birdle application.
